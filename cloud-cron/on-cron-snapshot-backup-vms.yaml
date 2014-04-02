@@ -1,0 +1,44 @@
+Events:
+   snapshot-time:
+      type:  periodic
+      task:  snapshot-and-backup-vms 
+         # Refer workflow here, consider changing 'task'
+      parameters: 
+         cron-pattern: "0 15 02 ? * MON-FRI"
+                       # Fire at 2:15 AM on week days
+
+Services: 
+   # Services not used here
+   # each action is assumed a 'native' in Openstack action pack
+Workflows: # To support multiple named workflows in one YAML
+   snapshot-and-backup-vms:
+      # Sketch worklfow that creates snapshots and moves them to a shared location
+      # For real life sample, see  http://tinyurl.com/kybymjz, http://tinyurl.com/mhhvk89
+      parameters:
+         backup_host: some.host.with.mount.to.backup.com
+         backup_destination: /BACKUPS/EBS-VOL
+      tasks:
+         list-vms:
+            action:Openstack.list_vms
+            on-complete: take-snapshots
+
+         take-snapshot:
+            action: Openstack.take_snapshot
+               # A script creates VM snapshot and stores it on 
+               # backup destination 
+            parameters:
+               vm-id: $list-vms.vm-id
+               backup_host: $backup_host
+               backup_destination: $backup_destination
+            # Note: this is a Multi-value use case where 
+            # the upstream task generates an array of vm-id
+            # and the take snapshot
+            on-success: save-snapshot
+
+         purge-snapshots:
+            action: std.ssh.cmd
+               # standard Mistral cmd running on remote host via ssh
+               # if SSH not welcome, we'll do Salt pack and offer salt.cmd
+            parameters:
+               host: $backup_host
+               cmd: find $backup_destination -type f -name "$mysql_backup_name*" -mtime +$backups_retention_days -exec rm -f {}\
