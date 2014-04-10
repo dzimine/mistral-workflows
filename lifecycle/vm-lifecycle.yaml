@@ -1,0 +1,112 @@
+Services: 
+   # Services not used here
+   # each action is assumed a 'native' in Openstack action pack
+
+Workflows: 
+   vm-lifecycle:
+      input: [user, user_email]
+      parameters:
+         lease_days: 5 
+         # Lease a VM for 5 days 
+         # Alternatively can query, or monitor for lease expiration in another workflow
+         lease_extends: 3 # How many times user can extend the lease
+         reminder_counter: 0 # Workflow scope var to count remindres
+         reminer_interval: 48 # hours 
+      tasks:
+         create-vm: 
+            workflow: provisionVM
+             # createVM here is another workflow, already defined in the system
+             # do we need to specify 'require createVM'? 
+             # calling another workflow... do we need an extra keyword? 
+             # or can we repurpose action? But workflow is a task, workflow is not an action...
+            on-success: notify-user
+            on-error: handle-error 
+
+         notify-vm-created:
+            action: std.send_email
+            parameters: 
+               to: $user_email
+               from: admin@example.com
+               subj: Lease vm $createVM.vm_name [$createVM.vm_id]
+               text: |
+                     Dear $user 
+                     your VM had been created. 
+                     Enjoy it for $lease-days after which it 
+
+         wait_for_lease:
+            action: std:wait
+            parameters:
+               interval: $lease_days
+               unit: days
+            on-finish: 
+               send_reminders
+
+         repeat:
+         # Initial lease expired, send user notification, let him
+         # extend the lease, 
+         # A sublflow! And we can repeat any task, or subflow, 
+         # multiple times. 
+            input: 
+               email_subj:
+            repeat: 
+               iterations: $lease_extends
+               break-on: 
+            on-finish: [notify-vm-gone, decomission-vm]
+            tasks: 
+               send_reminder:
+                  action: std.send_email
+                  parameters: 
+                     to: $user_email
+                     from: admin@example.com
+                     subj: > 
+                        RE: Lease vm $createVM.vm_name [$createVM.vm_id]
+                     text: | 
+                           Dear $user 
+                           Your VM lease is coming to the end.
+                           Your VM will be stopped and removed in $left days
+                           Reply within 12 hours to extend the lease
+                           |
+                           You can extend the lease {$reminder - $reminder_counters} times
+
+               # Opportunity to extend the lease by replying 
+               ask_for_extension:
+                  timeout: 720 # minutes, 12 hours
+                  action: std.wait_email
+                  parameters:
+                        # It waits for a reply to initial email with confirmation to 
+                        # continue the lease
+                        # Skipping email wait parameters for brivety
+                  on-timeout: std.complete # Assime this ends 'repeat' subflow
+                  on-success: 
+                     wait_more: ${ __result.text.contains('YES') }
+                        # here I am making huge assumptions, not yet discussed.
+                        # Questions: 1) evaluations 2) conditional transtions 3) "else" catch-all case semantic
+                  on-failure: std.complete
+
+               wait_more:
+                  action: std:wait
+                  parameters:
+                     interval: $reminer_interval
+                     unit: hours
+
+
+         notify-vm-gone:
+            action: std.send_email
+            parameters:
+               to: $user_email
+               from: admin@example.com
+               subj: > 
+                  RE: Lease vm $createVM.vm_name [$createVM.vm_id]
+               text: |
+                     Dear $ user, your VM is gone. Sorry dude, I told you.
+                     PS. Actually it's in a backup, come see me in 5 days 
+                     with a bottle of scotch and I can restore it.
+
+         decomission-vm:
+            workflow: decommisionVM 
+            # Assuming this workflow is already defined in the system. 
+            # Can actually be a workflow in the same file
+            # Do we need to do somethign like "require decommisionVM" ?
+            # Do we 
+            parameters:
+               vm_id: $provisionVM.vm_id

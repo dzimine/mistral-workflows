@@ -1,0 +1,28 @@
+Services: 
+   # Services not used here
+   # each action is assumed a 'native' in Openstack action pack
+
+Events:
+  mysql_memory_high:
+    trigger: nagios-high-memory
+    on-trigger: try-repair-mysql
+    parameters:
+      # Must refer trigger parameters somehow
+      host: {$nagios-high-memory.host} # QUESTION - How to refer the trigger?
+
+Workflows: 
+  repair-mysql-memory-high:
+    # Illustrate higher level workflow calling 
+    # sublfows just as tasks
+    input:
+      # Define the input here
+      host: 
+    tasks:
+      check-top-memory-consumers:
+      check-memory-trend:
+      check-mysql-deadlocks:
+      check-hung-processes:
+
+
+
+
