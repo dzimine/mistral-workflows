@@ -1,0 +1,100 @@
+Workflow:
+  name: Compute node planned maintainance
+  input: [ host, migrage_target_host]
+  output: ''
+  on-task-failure: std.continue #catch-all, just like exception handling...
+
+  tasks:
+    list-vms:
+      action: ListVMs
+      parameters: 
+        host: $host
+      on-success: migrate-vms
+
+    migrage-vms:
+      action: MigrateVMs
+      parameters:
+        id: $list_vms.vm-id
+        host: $migrage_target_host
+      on-success: stop-nova
+      on-failure: [notifyFailure, std.fail]
+
+    stop-nova:
+      action: SSH-CMD
+      parameters:
+        hosts: $host
+        cmd: stop nova-compute
+      on-success: disable-auto-start
+      on-error: [notifyFailure, std.fail]
+
+    disable-auto-start:
+      doc: > If you use a configuration management system, 
+        such as Puppet, that ensures the nova-compute service is 
+        always running, you can temporarily move the init files
+      action: SSH-CMD
+      parameters: 
+        hosts: $host
+        cmd: 
+          - mkdir /root/tmp
+          - mv /etc/init/nova-compute.conf /root/tmp
+          - mv /etc/init.d/nova-compute /root/tmp
+      on-finish: shut-down-host
+
+    shut-down-host:
+      action: SHUTDOWN-HOST
+      parameters: 
+        hosts: $host
+      on-finish: waitForMaintananceToComplete
+
+    waitForMaintananceToComplete:
+      doc: > check point, wait till sys admin notifies that 
+        maintainance is complete and the system is up.
+        We can be smarter, and auto configure a Sensu check 
+      action: WAIT_FOR_USER_INPUT
+      parameters:
+        prompt: "Reply when system is ready"
+        on-success: re-enable-auto-start
+
+    re-enable-auto-start:
+      action: SSH-CMD
+      parameters:
+        host: $host
+        cmd:
+          - mv /root/tmp/nova-compute.conf /etc/init
+          - mv /root/tmp/nova-compute /etc/init.d/
+      on-success: start-nova
+
+    start-nova:
+      action: SSH-CMD
+      parameters:
+        hosts: $host
+        cmd: start nova-compute 
+      on-success: check-nova-status
+
+    check-nova-status:
+      doc: Validate that Nova has successfully started up
+      action: NovaVerify
+      parameters:
+        host: $host
+      on-error: [notifyFailure, std.fail]
+      on-success: migrate-vms-back
+
+    migrate-vms-back: 
+      doc: | Returns the previously migrated vms back to the host.
+             Notice the power of keeping the context! And an elegance 
+             of action reuse within the same workflow.
+      action: MigrateVMs
+      parameters:
+        id: $list_vms.vm-id
+        host: $host
+      on-success: # Oops... I can't do std.end here, because this will be
+                  # called multiple times!!!
+                  # Should I flag "multi-value" here? 
+
+    notifyFailure:
+      # how can we get the task info here? 
+      action: SEND_EMAIL_TASK
+      parameters:
+        to: admin@example.com
+        subject: Workflow $__workflow_name__  $__execution_id__ failed
+        body: | The worklfow has failed. Please verify. 
