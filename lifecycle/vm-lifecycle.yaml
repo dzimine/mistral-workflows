@@ -3,15 +3,28 @@ Services:
    # each action is assumed a 'native' in Openstack action pack
 
 Workflows: 
+   invoke-vm-lifecycle:
+   # Illustrate the idea how a workflow can be invoked just as a task, with parameters provided
+   # Of course we could just call the vm-lifecycle with the set of parameters (data context) via REST
+      tasks:
+         invoke-vm-lifecycle-task:
+            action: vm-lifecycle
+            parameters:
+               user: myuser
+               user_email: myuser@example.com
+               lease_days: 5 
+               lease_extends: 3 
+               reminder_counter: 0 
+               reminer_interval: 48 
+
    vm-lifecycle:
-      input: [user, user_email]
-      parameters:
-         lease_days: 5 
-         # Lease a VM for 5 days 
-         # Alternatively can query, or monitor for lease expiration in another workflow
-         lease_extends: 3 # How many times user can extend the lease
-         reminder_counter: 0 # Workflow scope var to count remindres
-         reminer_interval: 48 # hours 
+      input: 
+         - user
+         - user_email
+         - lease_days
+         - lease_extends # How many times user can extend the lease
+         - reminder_counter # Workflow scope var to count remindres
+         - reminer_interval # hour
       tasks:
          create-vm: 
             workflow: provisionVM
