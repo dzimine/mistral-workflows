@@ -1,0 +1,40 @@
+Workflows: 
+   repair-mysql-memory-high:
+     # Illustrate higher level workflow calling 
+     # sublfows just as tasks
+     input:
+       # Define the input here
+       host: 
+     tasks: #Idea - can we dump the 'tasks' keyword and replace it with 'flow', 
+            #and optionally specify parallel, or linear/serial.
+            # NOTE(dzimine): Experimenting with tasks as ordered list
+            # to make a default order. 
+         linear:
+           - diagnose-mysql
+           action: diagnose-mysql
+           parameters:
+             host: {$.host} #QUESTION - how to refer this workflow scope? 
+
+           - try-repair-mysql
+           action: try-repair-mysql
+           parameters: 
+             host: {$.host}
+  diagnose-mysql:
+     doc: Checks possible causes of mysql high memory use
+     input:
+       - host
+     output:
+     tasks:
+       check-top-memory-consumers:
+       check-memory-trend:
+       check-mysql-deadlocks:
+       check-hung-processes:
+
+  try-repair-mysql:
+      doc: >
+       Attempts miltiple repairs basedo on diagnosis
+       Does one repari at the time, if not fixed, 
+       continues to the next repair. If all failes,
+       notifies human.
+      input:
+      output:
